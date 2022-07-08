@@ -1,0 +1,172 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package IIMFIsAlgorithm;
+
+import ca.pfv.spmf.tools.MemoryLogger;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ *
+ * @author lenovo
+ */
+public class AlgoIIMFIs {
+
+    public long startTimestamp; // start time of the latest execution
+    public long endTime; // end time of the latest execution
+    public double sizeMemory;
+    public int trnsNum = 0; // transaction count in the database
+    public int IMFIs; // number of IMFIs found
+    double minNovlty = 0;
+    int cur_Minsup; 
+    List<PD_IMFIs> PD_IMFIsnew = null;
+
+    /**
+     * Default constructor
+     */
+    public AlgoIIMFIs() {
+
+    }
+
+    public List<PD_IMFIs> runAlgorithm(String DBname, List<PD_IMFIs> PD_IMFIsPrv, boolean useNM, double Min_Sup, double minNovlty) throws IOException {
+
+        // number of transctrions in dataset found
+        trnsNum = 0;
+        // number of IMFIs found
+        // number of transctrions in dataset found
+        trnsNum = 0;
+        // number of IMFIs found
+        IMFIs = 0;
+        minNovlty = this.minNovlty;
+        // record start time
+        startTimestamp = System.currentTimeMillis();
+
+        //initialize tool to record memory usage
+        MemoryLogger.getInstance().reset();
+        MemoryLogger.getInstance().checkMemory();
+        //Step 1:   create new Model
+        // MapIndexIIMFIs = new HashMap<>();
+        PD_IMFIsnew = new ArrayList<>();
+        CreatedIIMFIs(PD_IMFIsPrv, DBname, Min_Sup);
+        MemoryLogger.getInstance().checkMemory();
+
+        sizeMemory = MemoryLogger.getInstance().getMaxMemory();
+        // record the end time
+        endTime = System.currentTimeMillis();
+        return PD_IMFIsnew;
+    }
+    private Map<Integer, Integer> MapIndexPDIMFIs = null;
+
+    private void CreatedIIMFIs(List<PD_IMFIs> PD_IMFIsPrv, String DBname, double Min_Sup) throws IOException {
+        // sub-Step 1.1
+        // Read PD_IMFIsPrv;
+        for (int i = 0; i < PD_IMFIsPrv.size(); i++) {
+            PD_IMFIs P = PD_IMFIsPrv.get(i);
+            P.cur_Sup = 0;
+            MapIndexPDIMFIs.put(P.item_Name, i);
+        }
+        //Sub-Step 1.2
+        //   ScanFristDB(input, modelPrv);
+        //Create object for reading the input file
+        BufferedReader reader = new BufferedReader(new FileReader(DBname));
+        String line;
+        // for each line (transaction) until the end of file
+        while (((line = reader.readLine()) != null)) {
+            // if the line is  a comment, is  empty or is a
+            // kind of metadata
+            if (line.isEmpty() == true || line.charAt(0) == '#' || line.charAt(0) == '%' || line.charAt(0) == '@') {
+                continue;
+            }
+
+            // split the line into items
+            String[] lineSplited = line.split(" ");
+            // for each item
+            for (String itemString : lineSplited) {
+                Integer item = Integer.parseInt(itemString);
+                Integer hindex = MapIndexPDIMFIs.get(item);
+                if (hindex != null) {
+                    PD_IMFIsPrv.get(hindex).cur_Sup++;
+                    PD_IMFIsPrv.get(hindex).incr_Sup++;
+
+                } else {
+                    PD_IMFIs Pnew = new PD_IMFIs();
+                    Pnew.item_Name = item;
+                    Pnew.cur_Sup = 1;
+                    Pnew.incr_Sup = 1;
+                    PD_IMFIsPrv.add(Pnew);
+                    MapIndexPDIMFIs.put(item, PD_IMFIsPrv.size() - 1);
+                }
+
+            }
+            // increase the transaction count
+            trnsNum++;
+        }
+        // close the input file
+        reader.close();
+         //Sub-Step 1.3
+     cur_Minsup  = (int) Math.ceil(Min_Sup * trnsNum);
+// Sub-Step 1.4
+        //sort model
+        //  List<String> Flist = null;
+        //  Flist = sortFList(Flist, modelPrv);
+        List<Integer> FList = new ArrayList<Integer>(MapIndexPDIMFIs.keySet());
+
+        // sort the header table by decreasing order of support
+        Collections.sort(FList, new Comparator<Integer>() {
+            public int compare(Integer id1, Integer id2) {
+                // compare the support
+                int compare = PD_IMFIsPrv.get(MapIndexPDIMFIs.get(id2)).incr_Sup - PD_IMFIsPrv.get(MapIndexPDIMFIs.get(id1)).incr_Sup;
+                if (compare == 0) {
+                compare = (id1 - id2);
+                return compare;
+            }
+                // otherwise use the support
+                return compare;
+            }
+        });
+         // System.out.println("Flist:" + Flist);
+        //  modelNew = modelPrv;
+        //Sub=Step 1.5
+        
+        HashMap<String, Integer> MapIndexPDIMFIsnew = new HashMap<String, Integer>();
+
+        int i = 0;
+        for (Integer item : FList) {
+
+            Integer indx = MapIndexPDIMFIs.get(item);
+            PD_IMFIs Pnew = new PD_IMFIs();
+            Pnew = PD_IMFIsPrv.get(indx);
+            //  M.now_Minsup = minsupNow;
+            Pnew.incr_Minsup += cur_Minsup;
+            if (Pnew.incr_Sup >= Pnew.incr_Minsup || Pnew.cur_Sup >= cur_Minsup) {
+                //   M.uinder_Mining = true;
+                if (Pnew.list_IMFIs.size() > 0) {
+                   // this.itemsetCount -= M.list_IMFIs.size();
+                    BulidTreeFromIMFIs(Pnew, PD_IMFIsPrv);
+
+                }
+
+                Pnew.list_IMFIs = new ArrayList<>();
+            } else {
+                // M.uinder_Mining = false;
+                IMFIs += Pnew.list_IMFIs.size();
+            }
+
+            modelNew.add(M);
+            MapIndexIIMFIsnew.put(item, i);
+            i++;
+        }
+        MapIndexIIMFIs = MapIndexIIMFIsnew;
+    }
+
+}
